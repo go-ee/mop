@@ -92,10 +92,12 @@ func (layout *Layout) Quotes(quotes *Quotes) string {
 		Now    string  // Current timestamp.
 		Header string  // Formatted header line.
 		Stocks []Stock // List of formatted stock quotes.
+		Shares []Stock
 	}{
 		time.Now().Format(`3:04:05pm ` + zonename),
 		layout.Header(quotes.profile),
 		layout.prettify(quotes),
+		layout.shares(quotes),
 	}
 
 	buffer := new(bytes.Buffer)
@@ -145,10 +147,60 @@ func (layout *Layout) prettify(quotes *Quotes) []Stock {
 		//
 		for _, column := range layout.columns {
 			// ex. value = stock.Change
-			value := reflect.ValueOf(&stock).Elem().FieldByName(column.name).String()
+			value := reflect.ValueOf(stock).Elem().FieldByName(column.name).String()
 			if column.formatter != nil {
 				// ex. value = currency(value)
 				value = column.formatter(value, stock.Currency)
+			}
+			// ex. pretty[i].Change = layout.pad(value, 10)
+			reflect.ValueOf(&pretty[i]).Elem().FieldByName(column.name).SetString(layout.pad(value, column.width))
+		}
+	}
+
+	profile := quotes.profile
+
+	if profile.filterExpression != nil {
+		if layout.filter == nil { // Initialize filter on first invocation.
+			layout.filter = NewFilter(profile)
+		}
+		pretty = layout.filter.Apply(pretty)
+	}
+
+	if layout.sorter == nil { // Initialize sorter on first invocation.
+		layout.sorter = NewSorter(profile)
+	}
+	layout.sorter.SortByCurrentColumn(pretty)
+	//
+	// Group stocks by advancing/declining unless sorted by Chanage or Change%
+	// in which case the grouping has been done already.
+	//
+	if profile.Grouped && (profile.SortColumn < 2 || profile.SortColumn > 3) {
+		pretty = group(pretty)
+	}
+
+	return pretty
+}
+
+//-----------------------------------------------------------------------------
+func (layout *Layout) shares(quotes *Quotes) []Stock {
+	pretty := make([]Stock, len(quotes.shares))
+	//
+	// Iterate over the list of stocks and properly format all its columns.
+	//
+	for i, share := range quotes.shares {
+		pretty[i].Advancing = share.Advancing
+		//
+		// Iterate over the list of stock columns. For each column name:
+		// - Get current column value.
+		// - If the column has the formatter method then call it.
+		// - Set the column value padding it to the given width.
+		//
+		for _, column := range layout.columns {
+			// ex. value = stock.Change
+			value := reflect.ValueOf(share).Elem().FieldByName(column.name).String()
+			if column.formatter != nil {
+				// ex. value = currency(value)
+				value = column.formatter(value, share.Currency)
 			}
 			// ex. pretty[i].Change = layout.pad(value, 10)
 			reflect.ValueOf(&pretty[i]).Elem().FieldByName(column.name).SetString(layout.pad(value, column.width))
@@ -211,6 +263,8 @@ func buildQuotesTemplate() *template.Template {
 
 {{.Header}}
 {{range.Stocks}}{{if .Advancing}}<green>{{end}}{{.Ticker}}{{.LastTrade}}{{.Change}}{{.ChangePct}}{{.Open}}{{.Low}}{{.High}}{{.Low52}}{{.High52}}{{.Volume}}{{.AvgVolume}}{{.PeRatio}}{{.Dividend}}{{.Yield}}{{.MarketCap}}{{.PreOpen}}{{.AfterHours}}</>
+{{end}}
+{{range.Shares}}{{if .Advancing}}<green>{{end}}{{.Ticker}}{{.LastTrade}}{{.Change}}{{.ChangePct}}{{.Open}}{{.Low}}{{.High}}{{.Low52}}{{.High52}}{{.Volume}}{{.AvgVolume}}{{.PeRatio}}{{.Dividend}}{{.Yield}}{{.MarketCap}}{{.PreOpen}}{{.AfterHours}}</>
 {{end}}`
 
 	return template.Must(template.New(`quotes`).Parse(markup))

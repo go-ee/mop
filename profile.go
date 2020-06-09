@@ -12,17 +12,27 @@ import (
 	"github.com/Knetic/govaluate"
 )
 
+type Share struct {
+	Trade  float64
+	Count  int
+}
+
 // Profile manages Mop program settings as defined by user (ex. list of
 // stock tickers). The settings are serialized using JSON and saved in
 // the ~/.moprc file.
 type Profile struct {
-	Tickers          []string                       // List of stock tickers to display.
-	MarketRefresh    int                            // Time interval to refresh market data.
-	QuotesRefresh    int                            // Time interval to refresh stock quotes.
-	SortColumn       int                            // Column number by which we sort stock quotes.
-	Ascending        bool                           // True when sort order is ascending.
-	Grouped          bool                           // True when stocks are grouped by advancing/declining.
-	Filter           string                         // Filter in human form
+	Tickers       []string          // List of stock tickers to display.
+	Shares        map[string]*Share // Ticker to share
+	MarketRefresh int               // Time interval to refresh market data.
+	QuotesRefresh int               // Time interval to refresh stock quotes.
+	SortColumn    int               // Column number by which we sort stock quotes.
+	Ascending     bool              // True when sort order is ascending.
+	Grouped       bool              // True when stocks are grouped by advancing/declining.
+	Filter        string            // Filter in human form
+	ApiUrl        string            // API url of finance service
+	ApiUrlParts   string            // API url parts for parameters
+
+	tickersAll       []string                       //Tickers and Share Tickers
 	filterExpression *govaluate.EvaluableExpression // The filter as a govaluate expression
 	selectedColumn   int                            // Stores selected column number when the column editor is active.
 	filename         string                         // Path to the file in which the configuration is stored
@@ -30,7 +40,7 @@ type Profile struct {
 
 // Creates the profile and attempts to load the settings from ~/.moprc file.
 // If the file is not there it gets created with default values.
-func NewProfile(filename string) *Profile {
+func NewProfile(filename string, region string) *Profile {
 	profile := &Profile{filename: filename}
 	data, err := ioutil.ReadFile(filename)
 	if err != nil { // Set default values:
@@ -38,21 +48,45 @@ func NewProfile(filename string) *Profile {
 		profile.QuotesRefresh = 5  // Stock quotes get updated every 5s (12 times per minute).
 		profile.Grouped = false    // Stock quotes are *not* grouped by advancing/declining.
 		profile.Tickers = []string{`AAPL`, `C`, `GOOG`, `IBM`, `KO`, `ORCL`, `V`}
+		profile.Shares = map[string]*Share{}
 		profile.SortColumn = 0   // Stock quotes are sorted by ticker name.
 		profile.Ascending = true // A to Z.
 		profile.Filter = ""
+		profile.ApiUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=%s`
+		if region == "de" {
+			profile.ApiUrlParts = `&range=1d&interval=5m&indicators=close&includeTimestamps=false&includePrePost=false&region=DE&lang=de-DE&corsDomain=de.finance.yahoo.com&.tsrc=finance`
+		} else {
+			profile.ApiUrlParts = `&range=1d&interval=5m&indicators=close&includeTimestamps=false&includePrePost=false&corsDomain=finance.yahoo.com&.tsrc=finance`
+		}
 		profile.Save()
 	} else {
 		json.Unmarshal(data, profile)
 		profile.SetFilter(profile.Filter)
 	}
 	profile.selectedColumn = -1
+	profile.CalculateTickersAll()
 
 	return profile
 }
 
+func (profile *Profile) CalculateTickersAll() {
+	tickers := make(map[string]bool)
+	for _, tracker := range profile.Tickers {
+		tickers[tracker] = true
+	}
+	for ticker, _ := range profile.Shares {
+		tickers[ticker] = true
+	}
+	profile.tickersAll = make([]string, 0)
+	for tracker, _ := range tickers {
+		profile.tickersAll = append(profile.tickersAll, tracker)
+	}
+}
+
 // Save serializes settings using JSON and saves them in ~/.moprc file.
 func (profile *Profile) Save() error {
+	profile.CalculateTickersAll()
+
 	data, err := json.Marshal(profile)
 	if err != nil {
 		return err

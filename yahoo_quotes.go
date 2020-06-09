@@ -47,13 +47,26 @@ type Stock struct {
 	AfterHours string `json:"postMarketChangePercent,omitempty"`
 }
 
+type ShareStock struct {
+	Ticker    string // Stock ticker.
+	Open      string // o: open/bought price.
+	LastTrade string // l1: last trade.
+	Currency  string // String code for currency of stock.
+	Change    string // c6: change real time.
+	ChangePct string // k2: percent change real time.
+	Advancing bool
+	Volume    string
+	AvgVolume string
+}
+
 // Quotes stores relevant pointers as well as the array of stock quotes for
 // the tickers we are tracking.
 type Quotes struct {
 	market  *Market  // Pointer to Market.
 	profile *Profile // Pointer to Profile.
-	stocks  []Stock  // Array of stock quote data.
-	errors  string   // Error string if any.
+	stocks  []*Stock // Array of stock quote data.
+	shares  []*Stock
+	errors  string // Error string if any.
 }
 
 // Sets the initial values and returns new Quotes struct.
@@ -76,8 +89,8 @@ func (quotes *Quotes) Fetch() (self *Quotes) {
 			}
 		}()
 
-		url := fmt.Sprintf(quotesURLv7, strings.Join(quotes.profile.Tickers, `,`))
-		response, err := http.Get(url + quotesURLv7QueryParts)
+		url := fmt.Sprintf(quotes.profile.ApiUrl, strings.Join(quotes.profile.tickersAll, `,`))
+		response, err := http.Get(url + quotes.profile.ApiUrlParts)
 		if err != nil {
 			panic(err)
 		}
@@ -141,7 +154,8 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 	}
 	results := d["quoteResponse"]["result"]
 
-	quotes.stocks = make([]Stock, len(results))
+	quotes.shares = make([]*Stock, 0)
+	quotes.stocks = make([]*Stock, len(results))
 	for i, raw := range results {
 		result := map[string]string{}
 		for k, v := range raw {
@@ -155,28 +169,31 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 			}
 
 		}
-		quotes.stocks[i].Ticker = result["symbol"]
-		quotes.stocks[i].LastTrade = result["regularMarketPrice"]
-		quotes.stocks[i].Change = result["regularMarketChange"]
-		quotes.stocks[i].ChangePct = result["regularMarketChangePercent"]
-		quotes.stocks[i].Open = result["regularMarketOpen"]
-		quotes.stocks[i].Low = result["regularMarketDayLow"]
-		quotes.stocks[i].High = result["regularMarketDayHigh"]
-		quotes.stocks[i].Low52 = result["fiftyTwoWeekLow"]
-		quotes.stocks[i].High52 = result["fiftyTwoWeekHigh"]
-		quotes.stocks[i].Volume = result["regularMarketVolume"]
-		quotes.stocks[i].AvgVolume = result["averageDailyVolume10Day"]
-		quotes.stocks[i].PeRatio = result["trailingPE"]
+		quotes.stocks[i] = &Stock{}
+		stock := quotes.stocks[i]
+
+		stock.Ticker = result["symbol"]
+		stock.LastTrade = result["regularMarketPrice"]
+		stock.Change = result["regularMarketChange"]
+		stock.ChangePct = result["regularMarketChangePercent"]
+		stock.Open = result["regularMarketOpen"]
+		stock.Low = result["regularMarketDayLow"]
+		stock.High = result["regularMarketDayHigh"]
+		stock.Low52 = result["fiftyTwoWeekLow"]
+		stock.High52 = result["fiftyTwoWeekHigh"]
+		stock.Volume = result["regularMarketVolume"]
+		stock.AvgVolume = result["averageDailyVolume10Day"]
+		stock.PeRatio = result["trailingPE"]
 		// TODO calculate rt
-		quotes.stocks[i].PeRatioX = result["trailingPE"]
-		quotes.stocks[i].Dividend = result["trailingAnnualDividendRate"]
-		quotes.stocks[i].Yield = result["trailingAnnualDividendYield"]
-		quotes.stocks[i].MarketCap = result["marketCap"]
+		stock.PeRatioX = result["trailingPE"]
+		stock.Dividend = result["trailingAnnualDividendRate"]
+		stock.Yield = result["trailingAnnualDividendYield"]
+		stock.MarketCap = result["marketCap"]
 		// TODO calculate rt?
-		quotes.stocks[i].MarketCapX = result["marketCap"]
-		quotes.stocks[i].Currency = result["currency"]
-		quotes.stocks[i].PreOpen = result["preMarketChangePercent"]
-		quotes.stocks[i].AfterHours = result["postMarketChangePercent"]
+		stock.MarketCapX = result["marketCap"]
+		stock.Currency = result["currency"]
+		stock.PreOpen = result["preMarketChangePercent"]
+		stock.AfterHours = result["postMarketChangePercent"]
 		/*
 			fmt.Println(i)
 			fmt.Println("-------------------")
@@ -185,9 +202,33 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 			}
 			fmt.Println("-------------------")
 		*/
-		adv, err := strconv.ParseFloat(quotes.stocks[i].Change, 64)
+		adv, err := strconv.ParseFloat(stock.Change, 64)
 		if err == nil {
-			quotes.stocks[i].Advancing = adv >= 0.0
+			stock.Advancing = adv >= 0.0
+		}
+
+		if share, ok := quotes.profile.Shares[stock.Ticker]; ok {
+			if lastTrade, err := strconv.ParseFloat(stock.LastTrade, 64); err == nil {
+
+				change := lastTrade - share.Trade
+				changePct := lastTrade / share.Trade
+				totalCost := int(share.Trade * float64(share.Count))
+				totalChange := int(lastTrade*float64(share.Count)) - totalCost
+
+				shareStock := &Stock{
+					Ticker:    stock.Ticker,
+					Open:      float2Str(share.Trade),
+					LastTrade: stock.LastTrade,
+					Currency:  stock.Currency,
+					Change:    float2Str(change),
+					ChangePct: float2Str(changePct),
+					Advancing: change > 0,
+					Volume:    strconv.Itoa(share.Count),
+					High:      strconv.Itoa(totalCost),
+					High52:    strconv.Itoa(totalChange),
+				}
+				quotes.shares = append(quotes.shares, shareStock)
+			}
 		}
 	}
 	return quotes, nil
@@ -197,7 +238,7 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 // market API.
 func (quotes *Quotes) parse(body []byte) *Quotes {
 	lines := bytes.Split(body, []byte{'\n'})
-	quotes.stocks = make([]Stock, len(lines))
+	quotes.stocks = make([]*Stock, len(lines))
 	//
 	// Get the total number of fields in the Stock struct. Skip the last
 	// Advanicing field which is not fetched.

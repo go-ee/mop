@@ -139,8 +139,9 @@ func main() {
 	}
 
 	profileName := flag.String("profile", path.Join(usr.HomeDir, defaultProfile), "path to profile")
+	region := flag.String("region", "en", "region of market")
 	flag.Parse()
 
-	profile := mop.NewProfile(*profileName)
+	profile := mop.NewProfile(*profileName, *region)
 	mainLoop(screen, profile)
 }
