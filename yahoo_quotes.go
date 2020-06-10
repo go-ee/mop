@@ -211,7 +211,7 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 			if lastTrade, err := strconv.ParseFloat(stock.LastTrade, 64); err == nil {
 
 				change := lastTrade - share.Trade
-				changePct := lastTrade / share.Trade
+				changePct := change * 100 / share.Trade
 				totalCost := int(share.Trade * float64(share.Count))
 				totalChange := int(lastTrade*float64(share.Count)) - totalCost
 
