@@ -213,7 +213,8 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 				change := lastTrade - share.Trade
 				changePct := change * 100 / share.Trade
 				totalCost := int(share.Trade * float64(share.Count))
-				totalChange := int(lastTrade*float64(share.Count)) - totalCost
+				currentCost := int(lastTrade * float64(share.Count))
+				totalChange := currentCost - totalCost
 
 				shareStock := &Stock{
 					Ticker:    stock.Ticker,
@@ -224,6 +225,7 @@ func (quotes *Quotes) parse2(body []byte) (*Quotes, error) {
 					ChangePct: float2Str(changePct),
 					Advancing: change > 0,
 					Volume:    strconv.Itoa(share.Count),
+					Low:      strconv.Itoa(currentCost),
 					High:      strconv.Itoa(totalCost),
 					High52:    strconv.Itoa(totalChange),
 				}
