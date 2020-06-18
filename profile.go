@@ -13,8 +13,8 @@ import (
 )
 
 type Share struct {
-	Trade  float64
-	Count  int
+	Trade float64
+	Count int
 }
 
 // Profile manages Mop program settings as defined by user (ex. list of
@@ -47,8 +47,17 @@ func NewProfile(filename string, region string) *Profile {
 		profile.MarketRefresh = 12 // Market data gets fetched every 12s (5 times per minute).
 		profile.QuotesRefresh = 5  // Stock quotes get updated every 5s (12 times per minute).
 		profile.Grouped = false    // Stock quotes are *not* grouped by advancing/declining.
-		profile.Tickers = []string{`AAPL`, `C`, `GOOG`, `IBM`, `KO`, `ORCL`, `V`}
-		profile.Shares = map[string]*Share{}
+		profile.Tickers = []string{`AMZ.F`, `GAZ.F`, `FB2A.F`, `ABEA.F`, `VOW3.F`, `AMD.F`, `LHA.F`, `TL0.F`, `AHLA.F`, `EBA.F`, `LUK.F`, `TUI1.F`, `AFR.F`, `MSF.F`, `INL.F`, `WDI.F`, `APC.F`, `5ZM.F`, `SCF.F`, `TU5A.F`, `BMW.F`, `IFX.F`, `PCE1.F`, `DAI.F`, `RY4D.F`, `EJT1.F`, `7HP.F`, `SAP.F`, `LHL.F`}
+		profile.Shares = map[string]*Share{
+			"AFR.F": &Share{
+				Trade: 5.35,
+				Count: 4000,
+			},
+			"LHL.F": &Share{
+				Trade: 0.4863,
+				Count: 30000,
+			},
+		}
 		profile.SortColumn = 0   // Stock quotes are sorted by ticker name.
 		profile.Ascending = true // A to Z.
 		profile.Filter = ""
